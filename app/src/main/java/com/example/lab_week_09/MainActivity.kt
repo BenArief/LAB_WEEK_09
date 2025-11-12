@@ -35,10 +35,16 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.foundation.layout.fillMaxWidth
 import com.example.lab_week_09.ui.theme.LAB_WEEK_09Theme
 import com.example.lab_week_09.ui.theme.OnBackgroundItemText
 import com.example.lab_week_09.ui.theme.OnBackgroundTitleText
 import com.example.lab_week_09.ui.theme.PrimaryTextButton
+import com.squareup.moshi.Json
+import com.squareup.moshi.JsonAdapter
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import com.squareup.moshi.Types
 
     class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -98,16 +104,39 @@ import com.example.lab_week_09.ui.theme.PrimaryTextButton
             )
         }
         var inputField = remember { mutableStateOf(Student("")) }
+        var error = remember {mutableStateOf<String?>(null)}
+        var errorEmptyMessage = stringResource(id = R.string.error_empty)
 
         HomeContent(
             listData,
             inputField.value,
-            {input -> inputField.value = inputField.value.copy(input)},
+            {input -> inputField.value = inputField.value.copy(input)
+            if (error.value != null) {
+                error.value = null
+            }},
             {
-                listData.add(inputField.value)
-                inputField.value = Student("")
+                if (inputField.value.name.isNotBlank()){
+                    listData.add(inputField.value)
+                    inputField.value = Student("")
+                    error.value = null
+                } else {
+                    error.value = errorEmptyMessage
+                }
             },
-            {navigateFromHomeToResult(listData.toList().toString())}
+            {
+                val moshi = Moshi.Builder()
+                .add(KotlinJsonAdapterFactory())
+                    .build()
+
+                val listType = Types.newParameterizedType(
+                    List::class.java,
+                    Student::class.java
+                )
+                val adapter: JsonAdapter<List<Student>> = moshi.adapter(listType)
+                val jsonString = adapter.toJson(listData.toList())
+                navigateFromHomeToResult(jsonString)
+            },
+            error = error.value
 
 
         )
@@ -119,7 +148,8 @@ import com.example.lab_week_09.ui.theme.PrimaryTextButton
         inputField: Student,
         onInputValueChange: (String) -> Unit,
         onButtonClick: () -> Unit,
-        navigateFromHomeToResult: () -> Unit
+        navigateFromHomeToResult: () -> Unit,
+        error: String?
     ) {
         LazyColumn {
             item {
@@ -136,6 +166,16 @@ import com.example.lab_week_09.ui.theme.PrimaryTextButton
                         ),
                         onValueChange = {
                             onInputValueChange(it)
+                        },
+                        isError = error != null,
+                        supportingText = {
+                            if (error != null){
+                                Text(
+                                    text = error,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
                     )
                     Row{
@@ -163,12 +203,36 @@ import com.example.lab_week_09.ui.theme.PrimaryTextButton
 
 @Composable
 fun ResultContent(listData: String){
-    Column(modifier = Modifier
+    val studentList: List<Student> = remember(listData) {
+        try {
+            val moshi = Moshi.Builder()
+                .add(KotlinJsonAdapterFactory())
+                .build()
+
+            val listType = Types.newParameterizedType(List::class.java, Student::class.java)
+            val adapter: JsonAdapter<List<Student>> = moshi.adapter(listType)
+
+            adapter.fromJson(listData) ?: emptyList()
+        } catch (e: Exception){
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+    LazyColumn(
+        modifier = Modifier
         .padding(vertical = 4.dp)
         .fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        OnBackgroundItemText(text = listData)
+        if(studentList.isEmpty()){
+            item {
+                OnBackgroundItemText(text = "No data received")
+            }
+        } else {
+            items(studentList) { student ->
+                OnBackgroundItemText(text = student.name)
+            }
+        }
     }
 }
 
